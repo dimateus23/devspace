@@ -86,6 +86,34 @@ create policy "Users can delete their own comments"
   on comments for delete using (auth.uid() = user_id);
 
 
+-- ─── Notifications ────────────────────────────────────────────────────────────
+create table public.notifications (
+  id           uuid default gen_random_uuid() primary key,
+  recipient_id uuid references public.profiles on delete cascade not null,
+  actor_id     uuid references public.profiles on delete cascade not null,
+  type         text not null check (type in ('like', 'comment')),
+  post_id      uuid references public.posts on delete cascade not null,
+  read         boolean default false not null,
+  created_at   timestamptz default now(),
+  -- one like-notification per actor per post; comments can stack
+  unique nulls not distinct (post_id, actor_id, type)
+);
+
+alter table public.notifications enable row level security;
+
+create policy "Users can view their own notifications"
+  on notifications for select using (auth.uid() = recipient_id);
+
+create policy "Authenticated users can insert notifications"
+  on notifications for insert with check (auth.uid() = actor_id);
+
+create policy "Users can update their own notifications"
+  on notifications for update using (auth.uid() = recipient_id);
+
+-- Enable realtime for live bell updates
+alter publication supabase_realtime add table notifications;
+
+
 -- ─── Auto-create profile on signup ───────────────────────────────────────────
 create or replace function public.handle_new_user()
 returns trigger as $$

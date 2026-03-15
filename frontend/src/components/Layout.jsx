@@ -1,5 +1,6 @@
 import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
+import NotificationsBell from './NotificationsBell'
 
 export default function Layout() {
   const { user, signOut } = useAuth()
@@ -46,6 +47,7 @@ export default function Layout() {
           <div className="flex items-center gap-3">
             {user ? (
               <>
+                <NotificationsBell user={user} />
                 <div className="hidden sm:flex items-center gap-2.5">
                   <div className="w-7 h-7 rounded-full bg-[#0070f3]/15 border border-[#0070f3]/25 flex items-center justify-center">
                     <span className="text-xs font-semibold text-[#338ef7]">

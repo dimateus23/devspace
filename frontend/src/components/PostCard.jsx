@@ -79,6 +79,12 @@ export default function PostCard({ post, currentUser, onUpdate }) {
       setOptimisticLiked(true)
       setOptimisticCount((c) => c + 1)
       await supabase.from('likes').insert({ post_id: post.id, user_id: currentUser.id })
+      if (post.user_id !== currentUser.id) {
+        supabase.from('notifications').upsert(
+          { recipient_id: post.user_id, actor_id: currentUser.id, type: 'like', post_id: post.id, read: false },
+          { onConflict: 'post_id,actor_id,type' }
+        ).then()
+      }
     }
     setLiking(false)
   }
@@ -114,6 +120,11 @@ export default function PostCard({ post, currentUser, onUpdate }) {
     } else {
       // Replace optimistic entry with real one
       setComments((prev) => prev.map((c) => (c.id === optimistic.id ? data : c)))
+      if (post.user_id !== currentUser.id) {
+        supabase.from('notifications').insert(
+          { recipient_id: post.user_id, actor_id: currentUser.id, type: 'comment', post_id: post.id }
+        ).then()
+      }
     }
     setSubmitting(false)
   }
