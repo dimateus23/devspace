@@ -55,27 +55,32 @@ export default function CreatePost({ onPost }) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-3">
+    <form
+      onSubmit={handleSubmit}
+      className="bg-[#0a0a0a] border border-[#1a1a1a] rounded-xl p-4 space-y-3 focus-within:border-[#2a2a2a] transition-colors duration-200"
+    >
       <textarea
         value={content}
         onChange={(e) => setContent(e.target.value)}
         placeholder="What are you building? Share an update, question, or thought..."
         rows={3}
-        className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white text-sm placeholder-gray-500 resize-none focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent"
+        className="w-full bg-transparent text-white text-sm placeholder-[#333] resize-none focus:outline-none leading-relaxed"
       />
 
-      {/* Tag input */}
-      <div className="flex flex-wrap gap-1.5 items-center bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 min-h-[38px] focus-within:ring-2 focus-within:ring-sky-500">
+      <div className="h-px bg-[#111]" />
+
+      {/* Tags row */}
+      <div className="flex flex-wrap gap-1.5 items-center min-h-[28px]">
         {tags.map((tag) => (
           <span
             key={tag}
-            className="flex items-center gap-1 text-xs bg-sky-500/10 text-sky-400 border border-sky-500/20 px-2 py-0.5 rounded-full"
+            className="inline-flex items-center gap-1 text-xs bg-[#0070f3]/10 text-[#338ef7] border border-[#0070f3]/20 px-2 py-0.5 rounded-md font-medium"
           >
             #{tag}
             <button
               type="button"
               onClick={() => setTags((t) => t.filter((x) => x !== tag))}
-              className="text-sky-400/60 hover:text-sky-300 leading-none"
+              className="text-[#338ef7]/50 hover:text-[#338ef7] transition-colors leading-none ml-0.5"
             >
               ×
             </button>
@@ -86,21 +91,36 @@ export default function CreatePost({ onPost }) {
           onChange={(e) => setTagInput(e.target.value)}
           onKeyDown={handleTagKeyDown}
           onBlur={() => tagInput && addTag(tagInput)}
-          placeholder={tags.length === 0 ? 'Add tags (press Enter or comma)' : ''}
-          className="flex-1 min-w-[140px] bg-transparent text-white text-xs placeholder-gray-500 outline-none"
+          placeholder={tags.length === 0 ? 'Add tags...' : tags.length < 5 ? 'Add more...' : ''}
+          className="flex-1 min-w-[100px] bg-transparent text-white text-xs placeholder-[#333] outline-none"
         />
+        {tags.length > 0 && (
+          <span className="text-xs text-[#333] ml-auto">{tags.length}/5</span>
+        )}
       </div>
-      <p className="text-xs text-gray-600">Up to 5 tags</p>
 
-      {error && <p className="text-xs text-red-400">{error}</p>}
+      {error && (
+        <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+          {error}
+        </p>
+      )}
 
-      <div className="flex justify-end">
+      {/* Footer */}
+      <div className="flex items-center justify-between pt-1">
+        <p className="text-xs text-[#333]">
+          {content.length > 0 && `${content.length} chars`}
+        </p>
         <button
           type="submit"
           disabled={loading || !content.trim()}
-          className="bg-sky-500 hover:bg-sky-600 disabled:opacity-40 text-white text-sm font-medium px-5 py-2 rounded-lg transition-colors"
+          className="bg-[#0070f3] hover:bg-[#338ef7] disabled:opacity-30 disabled:cursor-not-allowed text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors duration-150"
         >
-          {loading ? 'Posting...' : 'Post'}
+          {loading ? (
+            <span className="flex items-center gap-1.5">
+              <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              Posting...
+            </span>
+          ) : 'Post'}
         </button>
       </div>
     </form>
