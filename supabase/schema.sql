@@ -63,6 +63,27 @@ create policy "Users can delete their own likes"
   on likes for delete using (auth.uid() = user_id);
 
 
+-- ─── Comments ─────────────────────────────────────────────────────────────────
+create table public.comments (
+  id          uuid default gen_random_uuid() primary key,
+  post_id     uuid references public.posts on delete cascade not null,
+  user_id     uuid references public.profiles on delete cascade not null,
+  content     text not null,
+  created_at  timestamptz default now()
+);
+
+alter table public.comments enable row level security;
+
+create policy "Comments are viewable by everyone"
+  on comments for select using (true);
+
+create policy "Users can insert their own comments"
+  on comments for insert with check (auth.uid() = user_id);
+
+create policy "Users can delete their own comments"
+  on comments for delete using (auth.uid() = user_id);
+
+
 -- ─── Auto-create profile on signup ───────────────────────────────────────────
 create or replace function public.handle_new_user()
 returns trigger as $$

@@ -21,7 +21,8 @@ export default function Feed() {
       .select(`
         *,
         profiles!posts_user_id_fkey (id, username),
-        likes (id, user_id)
+        likes (id, user_id),
+        comments (id, content, created_at, user_id, profiles!comments_user_id_fkey (username))
       `)
       .order('created_at', { ascending: false })
 
