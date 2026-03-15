@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { timeAgo } from '../lib/utils'
 
@@ -29,7 +30,12 @@ function CommentItem({ comment }) {
       <Avatar username={comment.profiles?.username} size={6} />
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline gap-2 flex-wrap">
-          <span className="text-xs font-medium text-white">{comment.profiles?.username ?? 'Unknown'}</span>
+          <Link
+            to={`/profile/${comment.profiles?.username}`}
+            className="text-xs font-medium text-white hover:text-[#338ef7] transition-colors duration-150"
+          >
+            {comment.profiles?.username ?? 'Unknown'}
+          </Link>
           <span className="text-xs text-[#333]">{timeAgo(comment.created_at)}</span>
         </div>
         <p className="text-xs text-[#aaa] leading-relaxed mt-0.5 whitespace-pre-wrap">{comment.content}</p>
@@ -125,11 +131,16 @@ export default function PostCard({ post, currentUser, onUpdate }) {
         {/* Header */}
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2.5">
-            <Avatar username={post.profiles?.username} size={8} />
+            <Link to={`/profile/${post.profiles?.username}`}>
+              <Avatar username={post.profiles?.username} size={8} />
+            </Link>
             <div>
-              <p className="text-sm font-medium text-white leading-none">
+              <Link
+                to={`/profile/${post.profiles?.username}`}
+                className="text-sm font-medium text-white hover:text-[#338ef7] transition-colors duration-150 leading-none"
+              >
                 {post.profiles?.username ?? 'Unknown'}
-              </p>
+              </Link>
               <p className="text-xs text-[#444] mt-0.5">{timeAgo(post.created_at)}</p>
             </div>
           </div>

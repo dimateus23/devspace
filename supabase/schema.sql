@@ -6,6 +6,8 @@ create table public.profiles (
   username    text unique not null,
   avatar_url  text,
   bio         text,
+  github_url  text,
+  website_url text,
   created_at  timestamptz default now()
 );
 
