@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
+import MarkdownViewer from './MarkdownViewer'
 
 export default function CreatePost({ onPost }) {
   const { user } = useAuth()
@@ -9,6 +10,7 @@ export default function CreatePost({ onPost }) {
   const [tags, setTags] = useState([])
   const [imageFile, setImageFile] = useState(null)
   const [imagePreview, setImagePreview] = useState(null)
+  const [previewing, setPreviewing] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const fileInputRef = useRef(null)
@@ -84,6 +86,7 @@ export default function CreatePost({ onPost }) {
       setContent('')
       setTags([])
       setTagInput('')
+      setPreviewing(false)
       removeImage()
       onPost?.()
     }
@@ -95,13 +98,45 @@ export default function CreatePost({ onPost }) {
       onSubmit={handleSubmit}
       className="bg-[#0a0a0a] border border-[#1a1a1a] rounded-xl p-4 space-y-3 focus-within:border-[#2a2a2a] transition-colors duration-200"
     >
-      <textarea
-        value={content}
-        onChange={(e) => setContent(e.target.value)}
-        placeholder="What are you building? Share an update, question, or thought..."
-        rows={3}
-        className="w-full bg-transparent text-white text-sm placeholder-[#333] resize-none focus:outline-none leading-relaxed"
-      />
+      {/* Write / Preview tabs */}
+      <div className="flex items-center gap-1 -mb-1">
+        <button
+          type="button"
+          onClick={() => setPreviewing(false)}
+          className={`text-xs px-2.5 py-1 rounded-md transition-colors duration-150 ${
+            !previewing ? 'text-white bg-[#1a1a1a]' : 'text-[#444] hover:text-[#888]'
+          }`}
+        >
+          Write
+        </button>
+        <button
+          type="button"
+          onClick={() => setPreviewing(true)}
+          className={`text-xs px-2.5 py-1 rounded-md transition-colors duration-150 ${
+            previewing ? 'text-white bg-[#1a1a1a]' : 'text-[#444] hover:text-[#888]'
+          }`}
+        >
+          Preview
+        </button>
+      </div>
+
+      {previewing ? (
+        <div className="min-h-[72px] py-1">
+          {content.trim() ? (
+            <MarkdownViewer content={content} />
+          ) : (
+            <p className="text-[#333] text-sm">Nothing to preview.</p>
+          )}
+        </div>
+      ) : (
+        <textarea
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+          placeholder="What are you building? Share an update, question, or thought..."
+          rows={3}
+          className="w-full bg-transparent text-white text-sm placeholder-[#333] resize-none focus:outline-none leading-relaxed"
+        />
+      )}
 
       {/* Image preview */}
       {imagePreview && (
