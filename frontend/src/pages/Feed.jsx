@@ -1,52 +1,69 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query'
+import { useInView } from 'react-intersection-observer'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { useDebounce } from '../hooks/useDebounce'
 import CreatePost from '../components/CreatePost'
 import PostCard from '../components/PostCard'
 
+const PAGE_SIZE = 10
+
 export default function Feed() {
   const { user, loading: authLoading } = useAuth()
   const navigate = useNavigate()
-  const [posts, setPosts] = useState([])
-  const [loading, setLoading] = useState(true)
+  const queryClient = useQueryClient()
   const [searchQuery, setSearchQuery] = useState('')
   const debouncedSearch = useDebounce(searchQuery, 300)
+  const { ref, inView } = useInView()
 
   useEffect(() => {
     if (!authLoading && !user) navigate('/login')
   }, [user, authLoading, navigate])
 
-  const fetchPosts = useCallback(async (query = '') => {
-    let q = supabase
-      .from('posts')
-      .select(`
-        *,
-        profiles!posts_user_id_fkey (id, username),
-        likes (id, user_id),
-        comments (id, content, created_at, user_id, profiles!comments_user_id_fkey (username))
-      `)
-      .order('created_at', { ascending: false })
-
-    if (query.trim()) {
-      q = q.contains('tags', [query.trim().toLowerCase()])
-    }
-
-    const { data, error } = await q
-    if (!error) setPosts(data ?? [])
-    setLoading(false)
-  }, [])
+  const {
+    data,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading,
+  } = useInfiniteQuery({
+    queryKey: ['posts', debouncedSearch],
+    queryFn: async ({ pageParam }) => {
+      const from = pageParam * PAGE_SIZE
+      const to = from + PAGE_SIZE - 1
+      let q = supabase
+        .from('posts')
+        .select(`
+          *,
+          profiles!posts_user_id_fkey (id, username),
+          likes (id, user_id),
+          comments (id, content, created_at, user_id, profiles!comments_user_id_fkey (username))
+        `)
+        .order('created_at', { ascending: false })
+        .range(from, to)
+      if (debouncedSearch.trim()) {
+        q = q.contains('tags', [debouncedSearch.trim().toLowerCase()])
+      }
+      const { data, error } = await q
+      if (error) throw error
+      return data ?? []
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) =>
+      lastPage.length === PAGE_SIZE ? allPages.length : undefined,
+  })
 
   useEffect(() => {
-    fetchPosts(debouncedSearch)
-  }, [fetchPosts, debouncedSearch])
+    if (inView && hasNextPage && !isFetchingNextPage) {
+      fetchNextPage()
+    }
+  }, [inView, hasNextPage, isFetchingNextPage, fetchNextPage])
 
-  const refresh = useCallback(() => {
-    fetchPosts(debouncedSearch)
-  }, [fetchPosts, debouncedSearch])
+  const posts = data?.pages.flatMap((page) => page) ?? []
 
-  if (authLoading || loading) {
+  if (authLoading || isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="w-5 h-5 border-2 border-[#0070f3] border-t-transparent rounded-full animate-spin" />
@@ -65,7 +82,7 @@ export default function Feed() {
           </div>
           {posts.length > 0 && (
             <span className="text-xs text-[#555] bg-[#111] border border-[#1a1a1a] px-2.5 py-1 rounded-full">
-              {posts.length} {posts.length === 1 ? 'post' : 'posts'}
+              {posts.length}{hasNextPage ? '+' : ''} {posts.length === 1 ? 'post' : 'posts'}
             </span>
           )}
         </div>
@@ -94,7 +111,7 @@ export default function Feed() {
           )}
         </div>
 
-        <CreatePost onPost={refresh} />
+        <CreatePost />
 
         {posts.length === 0 ? (
           <div className="text-center py-20">
@@ -110,9 +127,29 @@ export default function Feed() {
         ) : (
           <div className="space-y-3">
             {posts.map((post) => (
-              <PostCard key={post.id} post={post} currentUser={user} onUpdate={refresh} />
+              <PostCard
+                key={post.id}
+                post={post}
+                currentUser={user}
+                onUpdate={() => queryClient.invalidateQueries({ queryKey: ['posts'] })}
+              />
             ))}
           </div>
+        )}
+
+        {/* Infinite scroll sentinel */}
+        <div ref={ref} className="h-1" />
+
+        {/* Loading next page */}
+        {isFetchingNextPage && (
+          <div className="flex justify-center py-4">
+            <div className="w-5 h-5 border-2 border-[#0070f3] border-t-transparent rounded-full animate-spin" />
+          </div>
+        )}
+
+        {/* End of feed */}
+        {!hasNextPage && posts.length >= PAGE_SIZE && (
+          <p className="text-center text-xs text-[#333] py-4">You've reached the end</p>
         )}
       </div>
     </div>

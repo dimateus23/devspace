@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import PostCard from '../components/PostCard'
@@ -44,58 +45,63 @@ function ExternalLink({ href, children }) {
 export default function Profile() {
   const { username } = useParams()
   const { user } = useAuth()
-
-  const [profile, setProfile] = useState(null)
-  const [posts, setPosts] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [notFound, setNotFound] = useState(false)
+  const queryClient = useQueryClient()
 
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState({ bio: '', github_url: '', website_url: '' })
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState(null)
 
+  const {
+    data: profile,
+    isLoading: profileLoading,
+    isError: profileError,
+  } = useQuery({
+    queryKey: ['profile', username],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('username', username)
+        .single()
+      if (error) throw error
+      return data
+    },
+  })
+
+  const { data: posts = [] } = useQuery({
+    queryKey: ['posts', 'user', profile?.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('posts')
+        .select(`
+          *,
+          profiles!posts_user_id_fkey (id, username),
+          likes (id, user_id),
+          comments (id, content, created_at, user_id, profiles!comments_user_id_fkey (username))
+        `)
+        .eq('user_id', profile.id)
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      return data ?? []
+    },
+    enabled: !!profile?.id,
+  })
+
+  // Sync form fields when profile loads or is refreshed
+  useEffect(() => {
+    if (profile) {
+      setForm({
+        bio: profile.bio ?? '',
+        github_url: profile.github_url ?? '',
+        website_url: profile.website_url ?? '',
+      })
+    }
+  }, [profile])
+
   const isOwner = user && profile && user.id === profile.id
 
-  const fetchProfile = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('username', username)
-      .single()
-
-    if (error || !data) {
-      setNotFound(true)
-      setLoading(false)
-      return
-    }
-
-    setProfile(data)
-    setForm({ bio: data.bio ?? '', github_url: data.github_url ?? '', website_url: data.website_url ?? '' })
-
-    const { data: postsData } = await supabase
-      .from('posts')
-      .select(`
-        *,
-        profiles!posts_user_id_fkey (id, username),
-        likes (id, user_id),
-        comments (id, content, created_at, user_id, profiles!comments_user_id_fkey (username))
-      `)
-      .eq('user_id', data.id)
-      .order('created_at', { ascending: false })
-
-    setPosts(postsData ?? [])
-    setLoading(false)
-  }, [username])
-
-  useEffect(() => {
-    setLoading(true)
-    setNotFound(false)
-    fetchProfile()
-  }, [fetchProfile])
-
   const startEdit = () => {
-    setForm({ bio: profile.bio ?? '', github_url: profile.github_url ?? '', website_url: profile.website_url ?? '' })
     setSaveError(null)
     setEditing(true)
   }
@@ -110,7 +116,7 @@ export default function Profile() {
     setSaving(true)
     setSaveError(null)
 
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from('profiles')
       .update({
         bio: form.bio.trim() || null,
@@ -118,19 +124,17 @@ export default function Profile() {
         website_url: form.website_url.trim() || null,
       })
       .eq('id', profile.id)
-      .select()
-      .single()
 
     if (error) {
       setSaveError(error.message)
     } else {
-      setProfile(data)
       setEditing(false)
+      queryClient.invalidateQueries({ queryKey: ['profile', username] })
     }
     setSaving(false)
   }
 
-  if (loading) {
+  if (profileLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="w-5 h-5 border-2 border-[#0070f3] border-t-transparent rounded-full animate-spin" />
@@ -138,7 +142,7 @@ export default function Profile() {
     )
   }
 
-  if (notFound) {
+  if (profileError || !profile) {
     return (
       <div className="max-w-2xl mx-auto px-6 py-24 text-center">
         <p className="text-4xl mb-3">404</p>
@@ -157,7 +161,6 @@ export default function Profile() {
             <LargeAvatar username={profile.username} />
 
             <div className="flex-1 min-w-0">
-              {/* Name + edit button */}
               <div className="flex items-center justify-between gap-3 mb-1">
                 <h1 className="text-xl font-bold text-white tracking-tight">@{profile.username}</h1>
                 {isOwner && !editing && (
@@ -173,12 +176,10 @@ export default function Profile() {
                 )}
               </div>
 
-              {/* Member since */}
               <p className="text-xs text-[#333] mb-3">
                 Joined {new Date(profile.created_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
               </p>
 
-              {/* View mode */}
               {!editing && (
                 <div className="space-y-2">
                   {profile.bio && (
@@ -199,7 +200,6 @@ export default function Profile() {
                 </div>
               )}
 
-              {/* Edit mode */}
               {editing && (
                 <form onSubmit={saveEdit} className="space-y-3 mt-1">
                   <div className="space-y-1.5">
@@ -280,7 +280,12 @@ export default function Profile() {
           ) : (
             <div className="space-y-3">
               {posts.map((post) => (
-                <PostCard key={post.id} post={post} currentUser={user} onUpdate={fetchProfile} />
+                <PostCard
+                  key={post.id}
+                  post={post}
+                  currentUser={user}
+                  onUpdate={() => queryClient.invalidateQueries({ queryKey: ['posts', 'user', profile.id] })}
+                />
               ))}
             </div>
           )}

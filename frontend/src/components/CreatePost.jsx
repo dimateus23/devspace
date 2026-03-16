@@ -1,10 +1,12 @@
 import { useState, useRef } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import MarkdownViewer from './MarkdownViewer'
 
-export default function CreatePost({ onPost }) {
+export default function CreatePost() {
   const { user } = useAuth()
+  const queryClient = useQueryClient()
   const [content, setContent] = useState('')
   const [tagInput, setTagInput] = useState('')
   const [tags, setTags] = useState([])
@@ -88,7 +90,7 @@ export default function CreatePost({ onPost }) {
       setTagInput('')
       setPreviewing(false)
       removeImage()
-      onPost?.()
+      queryClient.invalidateQueries({ queryKey: ['posts'] })
     }
     setLoading(false)
   }
