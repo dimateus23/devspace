@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 
@@ -7,8 +7,11 @@ export default function CreatePost({ onPost }) {
   const [content, setContent] = useState('')
   const [tagInput, setTagInput] = useState('')
   const [tags, setTags] = useState([])
+  const [imageFile, setImageFile] = useState(null)
+  const [imagePreview, setImagePreview] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const fileInputRef = useRef(null)
 
   const addTag = (raw) => {
     const tag = raw.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '')
@@ -27,6 +30,19 @@ export default function CreatePost({ onPost }) {
     }
   }
 
+  const handleImageChange = (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    setImageFile(file)
+    setImagePreview(URL.createObjectURL(file))
+  }
+
+  const removeImage = () => {
+    setImageFile(null)
+    setImagePreview(null)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!content.trim()) return
@@ -37,10 +53,29 @@ export default function CreatePost({ onPost }) {
       ? [...tags, tagInput.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '')]
       : tags
 
+    let image_url = null
+    if (imageFile) {
+      const ext = imageFile.name.split('.').pop()
+      const fileName = `${user.id}/${Date.now()}.${ext}`
+      const { error: uploadError } = await supabase.storage
+        .from('post_images')
+        .upload(fileName, imageFile)
+      if (uploadError) {
+        setError(uploadError.message)
+        setLoading(false)
+        return
+      }
+      const { data: { publicUrl } } = supabase.storage
+        .from('post_images')
+        .getPublicUrl(fileName)
+      image_url = publicUrl
+    }
+
     const { error } = await supabase.from('posts').insert({
       user_id: user.id,
       content: content.trim(),
       tags: finalTags.filter(Boolean),
+      image_url,
     })
 
     if (error) {
@@ -49,6 +84,7 @@ export default function CreatePost({ onPost }) {
       setContent('')
       setTags([])
       setTagInput('')
+      removeImage()
       onPost?.()
     }
     setLoading(false)
@@ -66,6 +102,22 @@ export default function CreatePost({ onPost }) {
         rows={3}
         className="w-full bg-transparent text-white text-sm placeholder-[#333] resize-none focus:outline-none leading-relaxed"
       />
+
+      {/* Image preview */}
+      {imagePreview && (
+        <div className="relative inline-block">
+          <img src={imagePreview} alt="Preview" className="max-h-48 rounded-lg border border-[#1a1a1a] object-cover" />
+          <button
+            type="button"
+            onClick={removeImage}
+            className="absolute top-1.5 right-1.5 w-5 h-5 bg-black/70 text-[#888] hover:text-white rounded-full flex items-center justify-center transition-colors"
+          >
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      )}
 
       <div className="h-px bg-[#111]" />
 
@@ -107,21 +159,46 @@ export default function CreatePost({ onPost }) {
 
       {/* Footer */}
       <div className="flex items-center justify-between pt-1">
-        <p className="text-xs text-[#333]">
-          {content.length > 0 && `${content.length} chars`}
-        </p>
-        <button
-          type="submit"
-          disabled={loading || !content.trim()}
-          className="bg-[#0070f3] hover:bg-[#338ef7] disabled:opacity-30 disabled:cursor-not-allowed text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors duration-150"
-        >
-          {loading ? (
-            <span className="flex items-center gap-1.5">
-              <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              Posting...
-            </span>
-          ) : 'Post'}
-        </button>
+        <div className="flex items-center gap-3">
+          {/* Image upload button */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handleImageChange}
+            className="hidden"
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="text-[#444] hover:text-[#888] transition-colors duration-150"
+            title="Attach image"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+              <circle cx="8.5" cy="8.5" r="1.5"/>
+              <polyline points="21 15 16 10 5 21"/>
+            </svg>
+          </button>
+          <span className="text-xs text-[#333]">Markdown supported</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <p className="text-xs text-[#333]">
+            {content.length > 0 && `${content.length} chars`}
+          </p>
+          <button
+            type="submit"
+            disabled={loading || !content.trim()}
+            className="bg-[#0070f3] hover:bg-[#338ef7] disabled:opacity-30 disabled:cursor-not-allowed text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors duration-150"
+          >
+            {loading ? (
+              <span className="flex items-center gap-1.5">
+                <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                Posting...
+              </span>
+            ) : 'Post'}
+          </button>
+        </div>
       </div>
     </form>
   )

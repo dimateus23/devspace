@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
+import { useDebounce } from '../hooks/useDebounce'
 import CreatePost from '../components/CreatePost'
 import PostCard from '../components/PostCard'
 
@@ -11,13 +12,14 @@ export default function Feed() {
   const [posts, setPosts] = useState([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
+  const debouncedSearch = useDebounce(searchQuery, 300)
 
   useEffect(() => {
     if (!authLoading && !user) navigate('/login')
   }, [user, authLoading, navigate])
 
-  const fetchPosts = useCallback(async () => {
-    const { data, error } = await supabase
+  const fetchPosts = useCallback(async (query = '') => {
+    let q = supabase
       .from('posts')
       .select(`
         *,
@@ -27,13 +29,22 @@ export default function Feed() {
       `)
       .order('created_at', { ascending: false })
 
+    if (query.trim()) {
+      q = q.contains('tags', [query.trim().toLowerCase()])
+    }
+
+    const { data, error } = await q
     if (!error) setPosts(data ?? [])
     setLoading(false)
   }, [])
 
   useEffect(() => {
-    fetchPosts()
-  }, [fetchPosts])
+    fetchPosts(debouncedSearch)
+  }, [fetchPosts, debouncedSearch])
+
+  const refresh = useCallback(() => {
+    fetchPosts(debouncedSearch)
+  }, [fetchPosts, debouncedSearch])
 
   if (authLoading || loading) {
     return (
@@ -42,12 +53,6 @@ export default function Feed() {
       </div>
     )
   }
-
-  const filteredPosts = posts.filter((post) => {
-    if (!searchQuery.trim()) return true;
-    const q = searchQuery.toLowerCase().trim();
-    return post.tags?.some((tag) => tag.toLowerCase().includes(q));
-  });
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-8">
@@ -60,7 +65,7 @@ export default function Feed() {
           </div>
           {posts.length > 0 && (
             <span className="text-xs text-[#555] bg-[#111] border border-[#1a1a1a] px-2.5 py-1 rounded-full">
-              {filteredPosts.length} {filteredPosts.length === 1 ? 'post' : 'posts'}
+              {posts.length} {posts.length === 1 ? 'post' : 'posts'}
             </span>
           )}
         </div>
@@ -89,9 +94,9 @@ export default function Feed() {
           )}
         </div>
 
-        <CreatePost onPost={fetchPosts} />
+        <CreatePost onPost={refresh} />
 
-        {filteredPosts.length === 0 ? (
+        {posts.length === 0 ? (
           <div className="text-center py-20">
             <div className="w-12 h-12 rounded-xl bg-[#0a0a0a] border border-[#1a1a1a] flex items-center justify-center mx-auto mb-4">
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#333" strokeWidth="1.5">
@@ -104,8 +109,8 @@ export default function Feed() {
           </div>
         ) : (
           <div className="space-y-3">
-            {filteredPosts.map((post) => (
-              <PostCard key={post.id} post={post} currentUser={user} onUpdate={fetchPosts} />
+            {posts.map((post) => (
+              <PostCard key={post.id} post={post} currentUser={user} onUpdate={refresh} />
             ))}
           </div>
         )}

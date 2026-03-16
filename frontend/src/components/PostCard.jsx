@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { timeAgo } from '../lib/utils'
+import MarkdownViewer from './MarkdownViewer'
 
 const AVATAR_PALETTE = [
   { bg: 'rgba(0,112,243,0.15)', border: 'rgba(0,112,243,0.3)', text: '#338ef7' },
@@ -38,7 +39,7 @@ function CommentItem({ comment }) {
           </Link>
           <span className="text-xs text-[#333]">{timeAgo(comment.created_at)}</span>
         </div>
-        <p className="text-xs text-[#aaa] leading-relaxed mt-0.5 whitespace-pre-wrap">{comment.content}</p>
+        <div className="mt-0.5"><MarkdownViewer content={comment.content} compact dimmed /></div>
       </div>
     </div>
   )
@@ -158,9 +159,18 @@ export default function PostCard({ post, currentUser, onUpdate }) {
         </div>
 
         {/* Content */}
-        <p className="text-[#ccc] text-sm leading-relaxed whitespace-pre-wrap mb-3">
-          {post.content}
-        </p>
+        <div className="mb-3">
+          <MarkdownViewer content={post.content} />
+        </div>
+
+        {/* Image */}
+        {post.image_url && (
+          <img
+            src={post.image_url}
+            alt="Post attachment"
+            className="w-full rounded-lg mb-3 max-h-96 object-cover border border-[#1a1a1a]"
+          />
+        )}
 
         {/* Tags */}
         {post.tags?.length > 0 && (
