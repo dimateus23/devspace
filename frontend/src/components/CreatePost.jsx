@@ -60,7 +60,7 @@ export default function CreatePost() {
     let image_url = null
     if (imageFile) {
       const ext = imageFile.name.split('.').pop()
-      const fileName = `${user.id}/${Date.now()}.${ext}`
+      const fileName = `${user.id}/${crypto.randomUUID()}.${ext}`
       const { error: uploadError } = await supabase.storage
         .from('post_images')
         .upload(fileName, imageFile)

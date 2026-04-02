@@ -3,28 +3,8 @@ import { useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
+import Avatar from '../components/Avatar'
 import PostCard from '../components/PostCard'
-
-const AVATAR_PALETTE = [
-  { bg: 'rgba(0,112,243,0.15)', border: 'rgba(0,112,243,0.3)', text: '#338ef7' },
-  { bg: 'rgba(124,58,237,0.15)', border: 'rgba(124,58,237,0.3)', text: '#a78bfa' },
-  { bg: 'rgba(16,185,129,0.15)', border: 'rgba(16,185,129,0.3)', text: '#34d399' },
-  { bg: 'rgba(239,68,68,0.15)', border: 'rgba(239,68,68,0.3)', text: '#f87171' },
-  { bg: 'rgba(245,158,11,0.15)', border: 'rgba(245,158,11,0.3)', text: '#fbbf24' },
-]
-
-function LargeAvatar({ username }) {
-  const initial = (username ?? '?')[0].toUpperCase()
-  const palette = AVATAR_PALETTE[(username?.charCodeAt(0) ?? 0) % AVATAR_PALETTE.length]
-  return (
-    <div
-      className="w-20 h-20 rounded-2xl flex items-center justify-center text-3xl font-bold shrink-0"
-      style={{ background: palette.bg, border: `1px solid ${palette.border}`, color: palette.text }}
-    >
-      {initial}
-    </div>
-  )
-}
 
 function ExternalLink({ href, children }) {
   if (!href) return null
@@ -78,7 +58,7 @@ export default function Profile() {
           *,
           profiles!posts_user_id_fkey (id, username),
           likes (id, user_id),
-          comments (id, content, created_at, user_id, profiles!comments_user_id_fkey (username))
+          comments(count)
         `)
         .eq('user_id', profile.id)
         .order('created_at', { ascending: false })
@@ -158,7 +138,7 @@ export default function Profile() {
         {/* Profile card */}
         <div className="bg-[#0a0a0a] border border-[#1a1a1a] rounded-xl p-6">
           <div className="flex items-start gap-5">
-            <LargeAvatar username={profile.username} />
+            <Avatar username={profile.username} large />
 
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between gap-3 mb-1">

@@ -1,29 +1,10 @@
 import { useState, useRef, useEffect } from 'react'
 import { Link } from 'react-router-dom'
+import { useMutation } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { timeAgo } from '../lib/utils'
+import Avatar from './Avatar'
 import MarkdownViewer from './MarkdownViewer'
-
-const AVATAR_PALETTE = [
-  { bg: 'rgba(0,112,243,0.15)', border: 'rgba(0,112,243,0.3)', text: '#338ef7' },
-  { bg: 'rgba(124,58,237,0.15)', border: 'rgba(124,58,237,0.3)', text: '#a78bfa' },
-  { bg: 'rgba(16,185,129,0.15)', border: 'rgba(16,185,129,0.3)', text: '#34d399' },
-  { bg: 'rgba(239,68,68,0.15)', border: 'rgba(239,68,68,0.3)', text: '#f87171' },
-  { bg: 'rgba(245,158,11,0.15)', border: 'rgba(245,158,11,0.3)', text: '#fbbf24' },
-]
-
-function Avatar({ username, size = 8 }) {
-  const initial = (username ?? '?')[0].toUpperCase()
-  const palette = AVATAR_PALETTE[(username?.charCodeAt(0) ?? 0) % AVATAR_PALETTE.length]
-  return (
-    <div
-      className={`w-${size} h-${size} rounded-full flex items-center justify-center text-xs font-semibold shrink-0`}
-      style={{ background: palette.bg, border: `1px solid ${palette.border}`, color: palette.text }}
-    >
-      {initial}
-    </div>
-  )
-}
 
 function CommentItem({ comment }) {
   return (
@@ -50,84 +31,108 @@ export default function PostCard({ post, currentUser, onUpdate }) {
     post.likes?.some((l) => l.user_id === currentUser?.id) ?? false
   )
   const [optimisticCount, setOptimisticCount] = useState(post.likes?.length ?? 0)
-  const [liking, setLiking] = useState(false)
   const [popAnim, setPopAnim] = useState(false)
 
   const [showComments, setShowComments] = useState(false)
-  const [comments, setComments] = useState(
-    [...(post.comments ?? [])].sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+  const [loadingComments, setLoadingComments] = useState(false)
+
+  // Support both count-only (from Feed) and full data (legacy)
+  const countOnly = post.comments?.length === 1 && typeof post.comments[0]?.count === 'number'
+  const [commentCount, setCommentCount] = useState(
+    countOnly ? post.comments[0].count : (post.comments?.length ?? 0)
   )
+  const [comments, setComments] = useState(
+    countOnly ? null : [...(post.comments ?? [])].sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+  )
+
   const [commentText, setCommentText] = useState('')
-  const [submitting, setSubmitting] = useState(false)
   const inputRef = useRef(null)
 
+  // Lazy-load comments when section is first opened
   useEffect(() => {
-    if (showComments) inputRef.current?.focus()
-  }, [showComments])
+    if (!showComments || comments !== null || loadingComments) return
+    setLoadingComments(true)
+    supabase
+      .from('comments')
+      .select('id, content, created_at, user_id, profiles!comments_user_id_fkey (username)')
+      .eq('post_id', post.id)
+      .order('created_at', { ascending: true })
+      .then(({ data, error }) => {
+        if (!error) setComments(data ?? [])
+        setLoadingComments(false)
+      })
+  }, [showComments, comments, loadingComments, post.id])
 
-  const toggleLike = async () => {
-    if (!currentUser || liking) return
-    setLiking(true)
-    if (!optimisticLiked) {
+  useEffect(() => {
+    if (showComments && comments !== null) inputRef.current?.focus()
+  }, [showComments, comments])
+
+  const likeMutation = useMutation({
+    mutationFn: async ({ wasLiked }) => {
+      if (wasLiked) {
+        const { error } = await supabase.from('likes').delete().eq('post_id', post.id).eq('user_id', currentUser.id)
+        if (error) throw error
+      } else {
+        const { error } = await supabase.from('likes').insert({ post_id: post.id, user_id: currentUser.id })
+        if (error) throw error
+      }
+    },
+    onError: (_, { wasLiked }) => {
+      setOptimisticLiked(wasLiked)
+      setOptimisticCount((c) => wasLiked ? c + 1 : c - 1)
+    },
+  })
+
+  const toggleLike = () => {
+    if (!currentUser || likeMutation.isPending) return
+    const wasLiked = optimisticLiked
+    if (!wasLiked) {
       setPopAnim(true)
       setTimeout(() => setPopAnim(false), 350)
     }
-    if (optimisticLiked) {
-      setOptimisticLiked(false)
-      setOptimisticCount((c) => c - 1)
-      await supabase.from('likes').delete().eq('post_id', post.id).eq('user_id', currentUser.id)
-    } else {
-      setOptimisticLiked(true)
-      setOptimisticCount((c) => c + 1)
-      await supabase.from('likes').insert({ post_id: post.id, user_id: currentUser.id })
-      if (post.user_id !== currentUser.id) {
-        supabase.from('notifications').upsert(
-          { recipient_id: post.user_id, actor_id: currentUser.id, type: 'like', post_id: post.id, read: false },
-          { onConflict: 'post_id,actor_id,type' }
-        ).then()
-      }
-    }
-    setLiking(false)
+    setOptimisticLiked(!wasLiked)
+    setOptimisticCount((c) => wasLiked ? c - 1 : c + 1)
+    likeMutation.mutate({ wasLiked })
   }
 
-  const submitComment = async (e) => {
+  const commentMutation = useMutation({
+    mutationFn: async ({ text }) => {
+      const { data, error } = await supabase
+        .from('comments')
+        .insert({ post_id: post.id, user_id: currentUser.id, content: text })
+        .select('id, content, created_at, user_id, profiles!comments_user_id_fkey (username)')
+        .single()
+      if (error) throw error
+      return data
+    },
+    onSuccess: (data, { optimisticId }) => {
+      setComments((prev) => (prev ?? []).map((c) => (c.id === optimisticId ? data : c)))
+    },
+    onError: (_, { text, optimisticId }) => {
+      setComments((prev) => (prev ?? []).filter((c) => c.id !== optimisticId))
+      setCommentCount((c) => c - 1)
+      setCommentText(text)
+    },
+  })
+
+  const submitComment = (e) => {
     e.preventDefault()
     const text = commentText.trim()
-    if (!text || !currentUser || submitting) return
-    setSubmitting(true)
+    if (!text || !currentUser || commentMutation.isPending) return
 
-    // Optimistic insert
+    const optimisticId = `temp-${Date.now()}`
     const optimistic = {
-      id: `temp-${Date.now()}`,
+      id: optimisticId,
       post_id: post.id,
       user_id: currentUser.id,
       content: text,
       created_at: new Date().toISOString(),
       profiles: { username: currentUser.email?.split('@')[0] },
     }
-    setComments((prev) => [...prev, optimistic])
+    setComments((prev) => [...(prev ?? []), optimistic])
     setCommentText('')
-
-    const { data, error } = await supabase
-      .from('comments')
-      .insert({ post_id: post.id, user_id: currentUser.id, content: text })
-      .select('id, content, created_at, user_id, profiles!comments_user_id_fkey (username)')
-      .single()
-
-    if (error) {
-      // Rollback
-      setComments((prev) => prev.filter((c) => c.id !== optimistic.id))
-      setCommentText(text)
-    } else {
-      // Replace optimistic entry with real one
-      setComments((prev) => prev.map((c) => (c.id === optimistic.id ? data : c)))
-      if (post.user_id !== currentUser.id) {
-        supabase.from('notifications').insert(
-          { recipient_id: post.user_id, actor_id: currentUser.id, type: 'comment', post_id: post.id }
-        ).then()
-      }
-    }
-    setSubmitting(false)
+    setCommentCount((c) => c + 1)
+    commentMutation.mutate({ text, optimisticId })
   }
 
   const handleCommentKeyDown = (e) => {
@@ -231,8 +236,8 @@ export default function PostCard({ post, currentUser, onUpdate }) {
             >
               <path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z" />
             </svg>
-            {comments.length > 0 && <span className="tabular-nums">{comments.length}</span>}
-            <span>Comment{comments.length !== 1 ? 's' : ''}</span>
+            {commentCount > 0 && <span className="tabular-nums">{commentCount}</span>}
+            <span>Comment{commentCount !== 1 ? 's' : ''}</span>
           </button>
         </div>
       </div>
@@ -241,7 +246,11 @@ export default function PostCard({ post, currentUser, onUpdate }) {
       {showComments && (
         <div className="border-t border-[#111] px-5 pt-4 pb-5 space-y-4">
           {/* Comment list */}
-          {comments.length > 0 ? (
+          {loadingComments ? (
+            <div className="flex justify-center py-2">
+              <div className="w-4 h-4 border-2 border-[#0070f3] border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : comments?.length > 0 ? (
             <div className="space-y-3">
               {comments.map((comment) => (
                 <CommentItem key={comment.id} comment={comment} />
@@ -267,7 +276,7 @@ export default function PostCard({ post, currentUser, onUpdate }) {
                 {commentText.trim() && (
                   <button
                     type="submit"
-                    disabled={submitting}
+                    disabled={commentMutation.isPending}
                     className="text-[#0070f3] hover:text-[#338ef7] disabled:opacity-40 transition-colors duration-150 shrink-0"
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">

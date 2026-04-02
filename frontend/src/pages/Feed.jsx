@@ -39,7 +39,7 @@ export default function Feed() {
           *,
           profiles!posts_user_id_fkey (id, username),
           likes (id, user_id),
-          comments (id, content, created_at, user_id, profiles!comments_user_id_fkey (username))
+          comments(count)
         `)
         .order('created_at', { ascending: false })
         .range(from, to)
